@@ -1,25 +1,31 @@
-// Import required modules
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-require('dotenv').config(); // Loads environment variables from .env file
 
-// Initialize Express app
 const app = express();
 
 // Middleware
-app.use(express.json()); // for parsing application/json
-app.use(cors()); // Enable CORS
+app.use(express.json());
+app.use(cors());
 
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => console.log('Connected to MongoDB'))
-.catch(err => console.error('Could not connect to MongoDB:', err));
+// MongoDB Connection settings
+const connectDB = async () => {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      connectTimeoutMS: 30000, // Increase timeout if necessary
+      socketTimeoutMS: 30000, // Increase socket timeout
+    });
+    console.log('Connected to MongoDB');
+  } catch (error) {
+    console.error('Could not connect to MongoDB:', error);
+    process.exit(1); // Exit if we cannot connect to the database
+  }
+};
 
-// Define Mongoose Schema
+// Mongoose Schema for profits
 const profitSchema = new mongoose.Schema({
   userId: { type: String, required: true },
   planId: { type: String, required: true },
@@ -27,8 +33,15 @@ const profitSchema = new mongoose.Schema({
   startTime: { type: Date, default: Date.now }
 });
 
-// Create Model
 const Profit = mongoose.model('Profit', profitSchema);
+
+// Connect to database before starting the server
+connectDB().then(() => {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+  });
+});
 
 // Routes
 app.post('/saveProfit', async (req, res) => {
@@ -39,7 +52,7 @@ app.post('/saveProfit', async (req, res) => {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    let profitData = await Profit.findOne({ userId, planId });
+    let profitData = await Profit.findOne({ userId, planId }).exec(); // Use .exec() for explicit promise
     
     if (!profitData) {
       profitData = new Profit({ userId, planId, profit });
@@ -64,8 +77,8 @@ app.get('/getProfit', async (req, res) => {
       return res.status(400).json({ message: 'Missing userId or planId' });
     }
 
-    const profitData = await Profit.findOne({ userId, planId });
-    if(profitData) {
+    const profitData = await Profit.findOne({ userId, planId }).exec();
+    if (profitData) {
       res.status(200).json({ profit: profitData.profit, startTime: profitData.startTime });
     } else {
       res.status(200).json({ profit: 0, startTime: new Date() });
@@ -74,10 +87,4 @@ app.get('/getProfit', async (req, res) => {
     console.error('Error fetching profit:', error);
     res.status(500).json({ message: 'An error occurred while fetching profit', error: error.message });
   }
-});
-
-// Start server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
 });
